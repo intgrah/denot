@@ -1,28 +1,22 @@
-/-
-+----------------------+
-| Jeremy Chen (jc2483) |
-+----------------------+
-
-I have made the possibly poor choice of doing this assignment in Lean.
-
-This means some of the proofs will be easier to read with an infoview.
-You can view this assigment on the link below.
-For the most part I have written human readable proofs (sometimes sketches).
--/
-
 import Mathlib.Data.Real.Archimedean
 import Mathlib.Order.OmegaCompletePartialOrder
 import Mathlib.Data.PFun
 
 open OmegaCompletePartialOrder
 
-/-! A domain is an ω-complete partial order with a bottom element. -/
+/-! A `Domain` is an ω-complete partial order with a bottom element. -/
 class Domain (α : Type*) extends OmegaCompletePartialOrder α, OrderBot α
+
+/-
+`α →o β` is notation for `OrderHom`, homomorphisms on orders, or monotone functions.
+`Chain α` is an abbreviation for `ℕ →o α`, i.e. increasing sequences of `α`.
+-/
 
 namespace PFun
 
 /-
-α →. β is definitionally equal to α → Part β, but typeclass inference
+`α →. β` is notation for partial functions between `α` and `β`.
+`α →. β` is definitionally equal to `α → Part β`, but typeclass inference
 does not unfold most definitions, so we use inferInstanceAs to use
 definitional equality instead.
 -/
@@ -51,6 +45,7 @@ of chains in `P` ordered pointwise.
 Show that if `P` is a domain then so is `Ch(P)`.
 -/
 
+/- Let P be a domain. -/
 variable {P : Type*} [Domain P]
 
 /-- Define the pointwise ordering on chains: x ⊑ y iff x(n) ⊑ y(n) for all n -/
@@ -64,13 +59,19 @@ To show Ch(P) is a partially ordered set, we verify:
 3. Antisymmetry: If x ⊑ y and y ⊑ x, then x = y by extensionality and antisymmetry in P
 -/
 instance : PartialOrder (Chain P) where
-  le x y := x ≤ y
-  -- Reflexivity: For all n, x n ≤ x n
-  le_refl x n := le_refl (x n)
+  -- Reflexivity: For all x, x ≤ x because for all n, x n ≤ x n
+  le_refl x := fun n => le_refl (x n)
   -- Transitivity: For all n, x n ≤ y n and y n ≤ z n implies x n ≤ z n
-  le_trans x y z hxy hyz n := le_trans (hxy n) (hyz n)
+  le_trans {x y z} := fun hxy hyz n => le_trans (hxy n) (hyz n)
   -- Antisymmetry: Chains are equal if they agree pointwise
-  le_antisymm x y hxy hyx := OrderHom.ext _ _ <| funext fun n => le_antisymm (hxy n) (hyx n)
+  le_antisymm {x y} := by
+    -- Let x y be chains, and assume x ≤ y and y ≤ x.
+    intro hxy hyx
+    apply OrderHom.ext
+    -- Function extensionality: we show that x and y agree on all values n
+    funext n
+    -- Use the definition of ≤ on Chains and antisymmetry.
+    exact le_antisymm (hxy n) (hyx n)
 
 /--
 Given a chain c : ℕ → Ch(P) of chains, we construct its supremum as a chain in P.
@@ -119,17 +120,21 @@ instance : OmegaCompletePartialOrder (Chain P) where
   -- If all c i ≤ x, then ωSup c ≤ x pointwise
   ωSup_le := by
     intro c x h n
+    show chainωSup c n ≤ x n
     apply ωSup_le
     intro i
     exact h i n
 
-/--
-The bottom element of Ch(P) is the constant chain ⊥(n) = ⊥_P for all n.
-This is indeed a chain since ⊥ ≤ ⊥, and it is below all other chains.
--/
+/-! The bottom element of Ch(P) -/
 instance : OrderBot (Chain P) where
-  bot := { toFun := fun _ => ⊥, monotone' := fun _ _ _ => le_refl ⊥ }
-  bot_le := fun _ _ => bot_le
+  bot := {
+    -- The bottom element of Ch(P) is the constant chain ⊥(n) = ⊥_P for all n.
+    toFun _ := ⊥
+    -- This is indeed a chain since ⊥ ≤ ⊥ by reflexivity.
+    monotone' := fun _ _ _ => le_refl ⊥
+  }
+  -- It is below all other chains, since ∀ x, ⊥ ≤ x
+  bot_le _ := fun _ => bot_le
 
 /-- Combining the above, Ch(P) is a domain. -/
 instance : Domain (Chain P) where
@@ -161,21 +166,28 @@ section i
 
 variable [PartialOrder Q]
 
-/-- The pointwise ordering on monotone functions forms a partial order. -/
-instance : PartialOrder (P →o Q) := inferInstance
+/--
+The pointwise ordering on monotone functions forms a partial order.
+This is already in Mathlib.
+-/
+instance : PartialOrder (P →o Q) := OrderHom.instPartialOrder
 
 /--
-Explicit construction showing that (P →o Q) is a partial order.
+Explicit construction showing that `P →o Q` is a partial order.
 The ordering f ⊑ g is defined by ∀ p, f p ⊑ g p.
 -/
 instance : PartialOrder (P →o Q) where
   le f g := ∀ p, f p ≤ g p
   -- Reflexivity: f p ≤ f p for all p
-  le_refl f p := le_refl (f p)
+  le_refl f := fun p => le_refl (f p)
   -- Transitivity: If f ⊑ g and g ⊑ h, then f ⊑ h pointwise
-  le_trans f g h hfg hgh p := le_trans (hfg p) (hgh p)
+  le_trans {f g h} := fun hfg hgh p => le_trans (hfg p) (hgh p)
   -- Antisymmetry: If f ⊑ g and g ⊑ f, then f = g by extensionality
-  le_antisymm f g hfg hgf := OrderHom.ext f g <| funext fun p => le_antisymm (hfg p) (hgf p)
+  le_antisymm {f g} := by
+    intro hfg hgf
+    apply OrderHom.ext
+    funext p
+    exact le_antisymm (hfg p) (hgf p)
 
 end i
 
@@ -196,7 +208,7 @@ Since each c n is monotone and Q is ω-complete, this defines a monotone functio
 -/
 noncomputable instance : OmegaCompletePartialOrder (P →o Q) where
   ωSup c := {
-    toFun := fun p => ωSup (c.map (OrderHom.apply p))
+    toFun p := ωSup (c.map (OrderHom.apply p))
     -- To show the supremum is monotone: if p₁ ≤ p₂, then (ωSup c) p₁ ≤ (ωSup c) p₂
     monotone' := by
       intro p₁ p₂ hp
@@ -209,12 +221,10 @@ noncomputable instance : OmegaCompletePartialOrder (P →o Q) where
         c n p₂ ≤ ωSup (c.map (OrderHom.apply p₂)) := le_ωSup (c.map (OrderHom.apply p₂)) n
   }
   -- For each i, c i ⊑ ωSup c, which means (c i) p ≤ (ωSup c) p for all p
-  le_ωSup c i := by
-    intro p
-    exact le_ωSup (c.map (OrderHom.apply p)) i
+  le_ωSup c i p := le_ωSup (c.map (OrderHom.apply p)) i
   -- If c i ⊑ g for all i, then ωSup c ⊑ g
-  ωSup_le c g h := by
-    intro p
+  ωSup_le c g := by
+    intro (h : ∀ i, c i ≤ g) p
     apply ωSup_le
     intro n
     exact h n p
@@ -223,19 +233,14 @@ noncomputable instance : OmegaCompletePartialOrder (P →o Q) where
 The bottom element of (P →o Q) is the constant function mapping everything to ⊥_Q.
 -/
 instance : OrderBot (P →o Q) where
-  bot := { toFun := fun _ => ⊥, monotone' := fun _ _ _ => le_refl ⊥ }
-  bot_le := fun _ _ => bot_le
+  bot := {
+    toFun _ := ⊥
+    monotone' := fun _ _ _ => le_refl ⊥
+  }
+  bot_le _ := fun _ => bot_le
 
 /-- Combining ω-completeness and bottom element, (P →o Q) is a domain. -/
 noncomputable instance : Domain (P →o Q) where
-
-/--
-Explicit construction: (P →o Q) is a domain, combining the ω-complete partial order
-structure with the bottom element.
--/
-noncomputable example : Domain (P →o Q) where
-  toOmegaCompletePartialOrder := inferInstance
-  toOrderBot := inferInstance
 
 end ii
 
@@ -244,22 +249,16 @@ end Q2
 section Q3
 
 /-!
-## Question 3: Corollary from Q1 applied to Q2(ii)
+## Question 3: Q1 as a special case of  Q2(ii)
 
 Q1: If P is a domain, then Ch(P) (chains in P) is a domain.
 Q2(ii): If Q is a domain, then (P ⇒ Q) is a domain.
 
-Corollary: If Q is a domain, then Ch(P ⇒ Q) (chains of monotone functions) is also a domain.
+Take P to be ℕ with the usual ordering. Chain P is by definition ℕ →o P.
 -/
 
-variable {P Q : Type*} [PartialOrder P] [Domain Q]
-
-/--
-By Q2(ii), (P →o Q) is a domain when Q is a domain.
-By Q1, Ch(D) is a domain when D is a domain.
-Therefore, Ch(P →o Q) is a domain.
--/
-noncomputable instance : Domain (Chain (P →o Q)) where
+noncomputable instance {P : Type*} [Domain P] : Domain (Chain P) :=
+  inferInstanceAs (Domain (ℕ →o P))
 
 end Q3
 
@@ -331,29 +330,41 @@ The halving function f(x) = x/2 on (0, 1].
 - For x ∈ (0, 1], we have 0 < x/2 < x ≤ 1, so x/2 ∈ (0, 1]
 - This function is monotone
 -/
-noncomputable def halve : Ioc01 →o Ioc01 where
-  toFun := fun ⟨x, hpos, hle⟩ => ⟨x / 2, by
-    constructor
-    -- 0 < x/2 since 0 < x
-    · linarith
-    -- x/2 ≤ 1 since x ≤ 1
-    · linarith⟩
+noncomputable def halve : Ioc01 →𝒄 Ioc01 where
+  toFun := fun ⟨x, hpos, hle⟩ => ⟨x / 2, by linarith, by linarith⟩
   -- Monotonicity: if x ≤ y then x/2 ≤ y/2
   monotone' := by
     intro ⟨x, _, _⟩ ⟨y, _, _⟩ (h : x ≤ y)
     simp only [Subtype.mk_le_mk]
     linarith
+  map_ωSup' := sorry
 
 /--
 The halving function has no fixed point.
 If x = x/2, then x = 0, but 0 ∉ (0, 1].
 -/
-theorem not_fix_halve : ¬∃ x, halve x = x := by
+theorem not_fix_halve : ¬∃ x, Function.IsFixedPt halve x := by
   intro ⟨⟨x, hpos, hle⟩, h_fix⟩
   -- From halve x = x, we get x/2 = x
   have : x / 2 = x := Subtype.ext_iff.mp h_fix
   -- This implies x = 0, contradicting x > 0
   linarith
+
+noncomputable instance : OmegaCompletePartialOrder Empty where
+  le _ _ := True
+  le_refl _ := trivial
+  le_trans {_ _ _} := fun _ _ => trivial
+  le_antisymm {a _} := fun _ _ => a.elim
+  ωSup c := c 0
+  le_ωSup c i := trivial
+  ωSup_le c x _ := trivial
+
+def f : Empty →𝒄 Empty where
+  toFun := id
+  monotone' := fun _ _ h => h
+  map_ωSup' := fun _ => rfl
+
+theorem not_fix_f : ¬∃ x, Function.IsFixedPt f x := fun ⟨x, _⟩ => x.elim
 
 end i
 
@@ -486,15 +497,6 @@ variable {D : Type*} [Domain D]
 
 /-- The product of two domains is a domain -/
 noncomputable instance {P Q : Type*} [Domain P] [Domain Q] : Domain (P × Q) where
-
-/--
-Explicit construction: P × Q is a domain with:
-- ωSup computed componentwise
-- Bottom element (⊥, ⊥)
--/
-noncomputable example {P Q : Type*} [Domain P] [Domain Q] : Domain (P × Q) where
-  toOmegaCompletePartialOrder := inferInstance
-  toOrderBot := inferInstance
 
 open Scott
 
@@ -787,3 +789,10 @@ theorem strict_hom_preserves_fix (f : D →𝒄 D) (g : E →𝒄 E) (h : D →�
 end ii
 
 end Q10
+
+class RefSymm (α : Type*) where
+  rel : α → α → Prop
+  refl : ∀ a, rel a a
+  symm : ∀ {a b}, rel a b → rel b a
+
+infix:50 " ~ " => RefSymm.rel
