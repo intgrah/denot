@@ -2,6 +2,7 @@ import Mathlib.Data.Real.Archimedean
 import Mathlib.Order.OmegaCompletePartialOrder
 import Mathlib.Data.PFun
 import Mathlib.Data.Vector.Defs
+import Mathlib.Computability.Partrec
 
 open OmegaCompletePartialOrder
 
@@ -821,6 +822,10 @@ inductive Tm : Nat → Type where
 | app : Tm n → Tm n → Tm n
 | fix : Tm n → Tm n
 
+def Tm.ofNat : Nat → Tm n
+| 0 => .zero
+| m + 1 => .succ (Tm.ofNat m)
+
 notation "zero" => Tm.zero
 notation "succ(" e ")" => Tm.succ e
 notation "pred(" e ")" => Tm.pred e
@@ -926,13 +931,16 @@ def Value.succ (v : Value) : Value := ⟨v.val.succ, v.property.succ⟩
 def Value.true : Value := ⟨.true, IsValue.true⟩
 def Value.false : Value := ⟨.false, IsValue.false⟩
 def Value.fun (τ : Ty) (e : Tm 1) : Value := ⟨.fun τ e, IsValue.fun⟩
+def Value.ofNat : Nat → Value
+| 0 => Value.zero
+| n + 1 => Value.succ (Value.ofNat n)
 
 notation:40 e " (⇓" τ ") " v => Eval e τ v
 
 inductive Eval : Tm 0 → Ty → Value → Prop where
-| val {τ v} :
-    (.nil ⊢ v.val : τ) →
-    (v.val (⇓τ) v)
+| val {τ v hv} :
+    (.nil ⊢ v : τ) →
+    (v (⇓τ) ⟨v, hv⟩)
 | succ {e v} :
     (e (⇓nat) v) →
     (succ(e) (⇓nat) v.succ)
@@ -992,6 +1000,35 @@ notation:40 e " (⇑" τ ")" => Diverges e τ
 
 def Ω (τ : Ty) : Tm 0 := fix(.fun τ (#0))
 
+/--
+PCF is Turing-complete: for every partial recursive function Φ, there is a PCF term
+Φ' ∈ PCF_(nat → nat) such that for all n ∈ ℕ, if Φ(n) is defined then Φ n (⇓nat) Φ(n).
+-/
+theorem turing_complete (Φ : Nat →. Nat) (hΦ : Nat.Partrec Φ) :
+    ∃ Φ' : Tm 0, ∀ n, Φ n = Part.some m → Φ'.app (.ofNat n) (⇓nat) .ofNat m := by
+  induction hΦ with
+  | «zero» =>
+    use .fun .nat zero
+    intro n h
+    rw [Part.some_inj.mp h.symm]
+    apply Eval.fun
+    · exact Eval.val (HasType.fun HasType.zero)
+    · simp only [subst, substAt]
+      exact Eval.val HasType.zero
+  | succ =>
+    use .fun .nat succ(#0)
+    sorry
+  | left => sorry
+  | right => sorry
+  | pair f g => sorry
+  | comp f g => sorry
+  | prec f g => sorry
+  | rfind f => sorry
+
 end PCF
+
+section Q1
+
+end Q1
 
 end P2
