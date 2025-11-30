@@ -1,6 +1,7 @@
 import Mathlib.Data.Real.Archimedean
 import Mathlib.Order.OmegaCompletePartialOrder
 import Mathlib.Data.PFun
+import Mathlib.Data.Vector.Defs
 
 open OmegaCompletePartialOrder
 
@@ -31,6 +32,8 @@ instance : OrderBot (α →. β) := inferInstanceAs (OrderBot (α → Part β))
 noncomputable instance : Domain (α →. β) where
 
 end PFun
+
+section P1
 
 section Q1
 
@@ -330,14 +333,13 @@ The halving function f(x) = x/2 on (0, 1].
 - For x ∈ (0, 1], we have 0 < x/2 < x ≤ 1, so x/2 ∈ (0, 1]
 - This function is monotone
 -/
-noncomputable def halve : Ioc01 →𝒄 Ioc01 where
+noncomputable def halve : Ioc01 →o Ioc01 where
   toFun := fun ⟨x, hpos, hle⟩ => ⟨x / 2, by linarith, by linarith⟩
   -- Monotonicity: if x ≤ y then x/2 ≤ y/2
   monotone' := by
     intro ⟨x, _, _⟩ ⟨y, _, _⟩ (h : x ≤ y)
     simp only [Subtype.mk_le_mk]
     linarith
-  map_ωSup' := sorry
 
 /--
 The halving function has no fixed point.
@@ -356,8 +358,9 @@ noncomputable instance : OmegaCompletePartialOrder Empty where
   le_trans {_ _ _} := fun _ _ => trivial
   le_antisymm {a _} := fun _ _ => a.elim
   ωSup c := c 0
-  le_ωSup c i := trivial
-  ωSup_le c x _ := trivial
+  le_ωSup _ _ := trivial
+  ωSup_le _ _ _ := trivial
+  lt_iff_le_not_ge {a _ } := a.elim
 
 def f : Empty →𝒄 Empty where
   toFun := id
@@ -632,13 +635,13 @@ theorem fix_prod_le (f : D →𝒄 D) (g : E →𝒄 E) :
       exact (h_chain n).2
   -- Stable: if d ≤ (fix f, fix g) then (f × g)(d) ≤ (fix f, fix g)
   case stable =>
-    intro d hd
+    intro (d, e) ⟨hd, he⟩
     constructor
     · calc
-        f d.1 ≤ f (fix f) := f.monotone' hd.1
+        f d ≤ f (fix f) := f.monotone' hd
         _ = fix f := fix_eq f
     · calc
-        g d.2 ≤ g (fix g) := g.monotone' hd.2
+        g e ≤ g (fix g) := g.monotone' he
         _ = fix g := fix_eq g
 
 /--
@@ -790,9 +793,205 @@ end ii
 
 end Q10
 
-class RefSymm (α : Type*) where
-  rel : α → α → Prop
-  refl : ∀ a, rel a a
-  symm : ∀ {a b}, rel a b → rel b a
+end P1
 
-infix:50 " ~ " => RefSymm.rel
+section P2
+
+namespace PCF
+
+inductive Ty : Type where
+| nat : Ty
+| bool : Ty
+| arrow : Ty → Ty → Ty
+
+notation "nat" => Ty.nat
+notation "bool" => Ty.bool
+notation:40 τ₁ " →' " τ₂ => Ty.arrow τ₁ τ₂
+
+inductive Tm : Nat → Type where
+| zero : Tm n
+| succ : Tm n → Tm n
+| pred : Tm n → Tm n
+| true : Tm n
+| false : Tm n
+| zero? : Tm n → Tm n
+| if : Tm n → Tm n → Tm n → Tm n
+| var : Fin n → Tm n
+| fun : Ty → Tm (n + 1) → Tm n
+| app : Tm n → Tm n → Tm n
+| fix : Tm n → Tm n
+
+notation "zero" => Tm.zero
+notation "succ(" e ")" => Tm.succ e
+notation "pred(" e ")" => Tm.pred e
+notation "true" => Tm.true
+notation "false" => Tm.false
+notation "zero?(" e ")" => Tm.zero? e
+notation "if' " b " then " e₁ " else " e₂ => Tm.if b e₁ e₂
+notation "#" i => Tm.var i
+notation "fix(" e ")" => Tm.fix e
+
+def shiftAbove (c : Nat) : Tm n → Tm (n + 1)
+| zero => zero
+| succ(e) => succ(shiftAbove c e)
+| pred(e) => pred(shiftAbove c e)
+| true => true
+| false => false
+| zero?(e) => zero?(shiftAbove c e)
+| if' b then e₁ else e₂ => if' shiftAbove c b then shiftAbove c e₁ else shiftAbove c e₂
+| #i => #(if i.val < c then ⟨i.val, Nat.lt_trans i.isLt (Nat.lt_succ_self n)⟩ else i.succ)
+| .fun τ e => .fun τ (shiftAbove (c + 1) e)
+| .app e₁ e₂ => .app (shiftAbove c e₁) (shiftAbove c e₂)
+| fix(e) => fix(shiftAbove c e)
+
+def shift : Tm n → Tm (n + 1) := shiftAbove 0
+
+def substAt (j : Fin (n + 1)) (u : Tm n) : Tm (n + 1) → Tm n
+| zero => zero
+| succ(e) => succ(substAt j u e)
+| pred(e) => pred(substAt j u e)
+| true => true
+| false => false
+| zero?(e) => zero?(substAt j u e)
+| if' b then e₁ else e₂ => if' substAt j u b then substAt j u e₁ else substAt j u e₂
+| .var i =>
+    if h₁ : i = j then u
+    else if h₂ : i < j then #⟨i, Nat.lt_of_lt_of_le h₂ (Nat.lt_succ_iff.mp j.isLt)⟩
+    else .var ⟨i - 1, Nat.sub_lt_right_of_lt_add
+      (Nat.one_le_of_lt (Nat.lt_of_le_of_ne (Fin.not_lt.mp h₂) (Ne.symm (Fin.val_ne_of_ne h₁))))
+      i.isLt⟩
+| .fun τ e => .fun τ (substAt j.succ (shift u) e)
+| .app e₁ e₂ => .app (substAt j u e₁) (substAt j u e₂)
+| fix(e) => fix(substAt j u e)
+
+def subst (u : Tm n) : Tm (n + 1) → Tm n := substAt 0 u
+
+def Ctx := List.Vector Ty
+
+set_option hygiene false
+
+notation:40 Γ " ⊢ " e " : " τ => HasType Γ e τ
+notation:max Γ "; " τ => List.Vector.cons τ Γ
+
+inductive HasType : Ctx n → Tm n → Ty → Prop where
+| zero {Γ} :
+  (Γ ⊢ zero : nat)
+| succ {Γ e} :
+  (Γ ⊢ e : nat) →
+  (Γ ⊢ succ(e) : nat)
+| pred {Γ e} :
+  (Γ ⊢ e : nat) →
+  (Γ ⊢ pred(e) : nat)
+| true {Γ} :
+  (Γ ⊢ true : bool)
+| false {Γ} :
+  (Γ ⊢ false : bool)
+| isz {Γ e} :
+  (Γ ⊢ e : nat) →
+  (Γ ⊢ zero?(e) : bool)
+| if {Γ e₁ e₂ e₃ τ} :
+  (Γ ⊢ e₁ : bool) →
+  (Γ ⊢ e₂ : τ) →
+  (Γ ⊢ e₃ : τ) →
+  (Γ ⊢ if' e₁ then e₂ else e₃ : τ)
+| var {Γ i} :
+  (Γ ⊢ #i : Γ.get i)
+| fun {Γ τ₁ e τ₂} :
+  ((Γ; τ₁) ⊢ e : τ₂) →
+  (Γ ⊢ .fun τ₁ e : τ₁ →' τ₂)
+| app {Γ e₁ τ₁ e₂ τ₂} :
+  (Γ ⊢ e₁ : τ₁ →' τ₂) →
+  (Γ ⊢ e₂ : τ₁) →
+  (Γ ⊢ e₁.app e₂ : τ₂)
+| fix {Γ e τ} :
+  (Γ ⊢ e : τ →' τ) →
+  (Γ ⊢ fix(e) : τ)
+
+theorem substitution {Γ : Ctx n} {e₁ τ₁ e₂ τ₂}
+    (he₁ : Γ ⊢ e₁ : τ₁)
+    (he₂ : (Γ; τ₁) ⊢ e₂ : τ₂) :
+    (Γ ⊢ subst e₁ e₂ : τ₂) := by
+  sorry
+
+inductive IsValue : Tm 0 → Prop where
+| zero : IsValue zero
+| succ {e} : IsValue e → IsValue succ(e)
+| true : IsValue true
+| false : IsValue false
+| fun {τ e} : IsValue (.fun τ e)
+
+def Value := { e : Tm 0 // IsValue e }
+def Value.zero : Value := ⟨.zero, IsValue.zero⟩
+def Value.succ (v : Value) : Value := ⟨v.val.succ, v.property.succ⟩
+def Value.true : Value := ⟨.true, IsValue.true⟩
+def Value.false : Value := ⟨.false, IsValue.false⟩
+def Value.fun (τ : Ty) (e : Tm 1) : Value := ⟨.fun τ e, IsValue.fun⟩
+
+notation:40 e " (⇓" τ ") " v => Eval e τ v
+
+inductive Eval : Tm 0 → Ty → Value → Prop where
+| val {τ v} :
+    (.nil ⊢ v.val : τ) →
+    (v.val (⇓τ) v)
+| succ {e v} :
+    (e (⇓nat) v) →
+    (succ(e) (⇓nat) v.succ)
+| pred {e v} :
+    (e (⇓nat) v.succ) →
+    (pred(e) (⇓nat) v)
+| zero_z {e} :
+    (e (⇓nat) .zero) →
+    (zero?(e) (⇓bool) .true)
+| zero_s {e v} :
+    (e (⇓nat) .succ v) →
+    (zero?(e) (⇓bool) .false)
+| if_t {b e₁ e₂ τ v} :
+    (b (⇓bool) .true) →
+    (e₁ (⇓τ) v) →
+    ((if' b then e₁ else e₂) (⇓τ) v)
+| if_f {b e₁ e₂ τ v} :
+    (b (⇓bool) .false) →
+    (e₂ (⇓τ) v) →
+    ((if' b then e₁ else e₂) (⇓τ) v)
+| fun {e e₁ τ₁ e₂ τ₂ v} :
+    (e (⇓τ₁ →' τ₂) .fun τ₁ e₂) →
+    (subst e₁ e₂ (⇓τ₂) v) →
+    (e.app e₁ (⇓τ₂) v)
+| fix {e τ v} :
+    (e.app fix(e) (⇓τ) v) →
+    (fix(e) (⇓τ) v)
+
+def plus : Tm 0 :=
+  .fun .nat <| -- x : nat
+  fix(
+    .fun (nat →' nat) <| -- f : nat → nat
+    .fun nat <| -- y : nat
+    if' zero?(#0) then -- y = 0
+      #2 -- x
+    else
+      succ((#1).app pred(#0))) -- f (y - 1)
+
+example : .nil ⊢ plus : nat →' nat →' nat := by
+  apply HasType.fun
+  apply HasType.fix
+  apply HasType.fun
+  apply HasType.fun
+  apply HasType.if
+  · apply HasType.isz
+    exact HasType.var
+  · exact HasType.var
+  · apply HasType.succ
+    apply HasType.app
+    · exact HasType.var
+    · apply HasType.pred
+      apply HasType.var
+
+def Diverges (e : Tm 0) (τ : Ty) : Prop := ¬∃ v, e (⇓τ) v
+
+notation:40 e " (⇑" τ ")" => Diverges e τ
+
+def Ω (τ : Ty) : Tm 0 := fix(.fun τ (#0))
+
+end PCF
+
+end P2
