@@ -392,17 +392,17 @@ If d ≤ f(d), then the supremum of iterating f from d is the least fixed point 
 theorem least_fixed_point_above (d : D) (h : d ≤ f d) :
     ∃ e, IsLeast {x | d ≤ x ∧ f x = x} e := by
   -- Construct the chain d, f(d), f²(d), ...
-  let chain := OmegaCompletePartialOrder.fixedPoints.iterateChain f d h
+  let chain := fixedPoints.iterateChain f d h
   use ωSup chain
   constructor
   · constructor
     -- d ≤ ωSup chain since d is the first element
     · exact le_ωSup chain 0
     -- ωSup chain is a fixed point by continuity
-    · exact OmegaCompletePartialOrder.fixedPoints.ωSup_iterate_mem_fixedPoint f d h
+    · exact fixedPoints.ωSup_iterate_mem_fixedPoint f d h
   · intro e' ⟨hd, he'⟩
     -- ωSup chain is the least fixed point above d
-    exact OmegaCompletePartialOrder.fixedPoints.ωSup_iterate_le_fixedPoint f d h he' hd
+    exact fixedPoints.ωSup_iterate_le_fixedPoint f d h he' hd
 
 end ii
 
