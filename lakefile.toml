@@ -13,10 +13,5 @@ maxSynthPendingDepth = 3
 name = "mathlib"
 scope = "leanprover-community"
 
-[[require]]
-name = "doc-gen4"
-scope = "leanprover"
-rev = "main"
-
 [[lean_lib]]
 name = "Denot"

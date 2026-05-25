@@ -1,9 +1,10 @@
 import Mathlib.Order.OmegaCompletePartialOrder
 import Mathlib.Data.PFun
 
+/-! A domain is an ω-complete partial order with a bottom element. -/
+
 open OmegaCompletePartialOrder
 
-/-! A domain is an ω-complete partial order with a bottom element. -/
 class Domain (α : Type*) extends OmegaCompletePartialOrder α, OrderBot α
 
 /-
@@ -76,7 +77,6 @@ theorem ωSup_ωSup_comm
   -- Build chains for each row and column
   let row_chains : ℕ → Chain α := fun i => ⟨d i, h_mono_j i⟩
   let col_chains : ℕ → Chain α := fun j => ⟨fun i => d i j, h_mono_i j⟩
-
   -- The chain of row suprema
   have row_mono : Monotone (fun i => ωSup (row_chains i)) := by
     intro i i' hii'
@@ -86,7 +86,6 @@ theorem ωSup_ωSup_comm
         ≤ d i' j := h_mono_i j hii'
       _ ≤ ωSup (row_chains i') := le_ωSup (row_chains i') j
   let row_sup_chain : Chain α := ⟨fun i => ωSup (row_chains i), row_mono⟩
-
   -- The chain of column suprema
   have col_mono : Monotone (fun j => ωSup (col_chains j)) := by
     intro j j' hjj'
@@ -96,19 +95,16 @@ theorem ωSup_ωSup_comm
         ≤ d i j' := h_mono_j i hjj'
       _ ≤ ωSup (col_chains j') := le_ωSup (col_chains j') i
   let col_sup_chain : Chain α := ⟨fun j => ωSup (col_chains j), col_mono⟩
-
   have eq₁ : ⨆ i, ⨆ j, d i j = ωSup row_sup_chain := by
     calc ⨆ i, ⨆ j, d i j
         = ⨆ i, ωSup (row_chains i) := by
           congr 1; funext i; exact iSup_chain_eq_ωSup (row_chains i)
       _ = ωSup row_sup_chain := iSup_chain_eq_ωSup row_sup_chain
-
   have eq₂ : ⨆ j, ⨆ i, d i j = ωSup col_sup_chain := by
     calc ⨆ j, ⨆ i, d i j
         = ⨆ j, ωSup (col_chains j) := by
           congr 1; funext j; exact iSup_chain_eq_ωSup (col_chains j)
       _ = ωSup col_sup_chain := iSup_chain_eq_ωSup col_sup_chain
-
   rw [eq₁, eq₂]
   apply le_antisymm
   · show ωSup row_sup_chain ≤ ωSup col_sup_chain
@@ -133,7 +129,6 @@ theorem ωSup_ωSup_eq_ωSup_diag
     (h_mono_i : ∀ j, Monotone (fun i => d i j))
     (h_mono_j : ∀ i, Monotone (d i)) :
     ⨆ (i) (j), d i j = ⨆ i, d i i := by
-
   let row_chains : ℕ → Chain α := fun i => ⟨d i, h_mono_j i⟩
   have row_mono : Monotone (fun i => ωSup (row_chains i)) := by
     intro i i' hii'
@@ -143,20 +138,16 @@ theorem ωSup_ωSup_eq_ωSup_diag
         ≤ d i' j := h_mono_i j hii'
       _ ≤ ωSup (row_chains i') := le_ωSup (row_chains i') j
   let row_sup_chain : Chain α := ⟨fun i => ωSup (row_chains i), row_mono⟩
-
   let diag_chain : Chain α := ⟨fun i => d i i, fun i j hij =>
     calc d i i
         ≤ d j i := h_mono_i i hij
       _ ≤ d j j := h_mono_j j hij⟩
-
   have eq₁ : ⨆ i, ⨆ j, d i j = ωSup row_sup_chain := by
     calc ⨆ i, ⨆ j, d i j
         = ⨆ i, ωSup (row_chains i) := by
           congr 1; funext i; exact iSup_chain_eq_ωSup (row_chains i)
       _ = ωSup row_sup_chain := iSup_chain_eq_ωSup row_sup_chain
-
   have eq₂ : ⨆ i, d i i = ωSup diag_chain := iSup_chain_eq_ωSup diag_chain
-
   rw [eq₁, eq₂]
   apply le_antisymm
   · show ωSup row_sup_chain ≤ ωSup diag_chain

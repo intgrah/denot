@@ -1,1 +1,1 @@
-import Denot.Basic
+import Denot.Domain

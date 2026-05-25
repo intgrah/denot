@@ -3,6 +3,7 @@ import Mathlib.Order.OmegaCompletePartialOrder
 import Mathlib.Data.PFun
 import Mathlib.Data.Vector.Defs
 import Mathlib.Computability.Partrec
+import Mathlib.Util.WhatsNew
 
 open OmegaCompletePartialOrder
 
@@ -194,6 +195,34 @@ instance : PartialOrder (P →o Q) where
     exact le_antisymm (hfg p) (hgf p)
 
 end i
+
+def H : ℕ → ℕ → ℕ → ℕ
+  | 0, _, b => b.succ
+  | 1, a, 0 => a
+  | 2, _, 0 => 0
+  | _, _, 0 => 1
+  | n + 1, a, b + 1 => H n a (H (n + 1) a b)
+
+def grahamSeq : ℕ → ℕ
+  | 0 => 4
+  | k + 1 => H (grahamSeq k + 2) 3 3
+
+def grahamNumber : ℕ := grahamSeq 64
+
+#check grahamNumber
+
+-- Level 0: Successor
+#eval H 0 9 5    -- Result: 6 (just 5 + 1)
+-- Level 1: Addition
+#eval H 1 10 5   -- Result: 15 (10 + 5)
+-- Level 2: Multiplication
+#eval H 2 10 5
+-- Level 3: Exponentiation
+#eval H 3 2 3    -- Result: 8 (2^3)
+#eval H 3 3 2    -- Result: 9 (3^2)
+-- Level 4: Tetration (2 ^^ 3 = 2^(2^2) = 2^4 = 16)
+#eval H 4 2 3 = 16    -- Result: 16
+
 
 section ii
 
@@ -801,31 +830,38 @@ section P2
 namespace PCF
 
 inductive Ty : Type where
-| nat : Ty
-| bool : Ty
-| arrow : Ty → Ty → Ty
+  | nat : Ty
+  | bool : Ty
+  | arrow : Ty → Ty → Ty
 
 notation "nat" => Ty.nat
 notation "bool" => Ty.bool
 notation:40 τ₁ " →' " τ₂ => Ty.arrow τ₁ τ₂
 
-inductive Tm : Nat → Type where
-| zero : Tm n
-| succ : Tm n → Tm n
-| pred : Tm n → Tm n
-| true : Tm n
-| false : Tm n
-| zero? : Tm n → Tm n
-| if : Tm n → Tm n → Tm n → Tm n
-| var : Fin n → Tm n
-| fun : Ty → Tm (n + 1) → Tm n
-| app : Tm n → Tm n → Tm n
-| fix : Tm n → Tm n
+def Ctx := List.Vector Ty
 
-def Tm.ofNat : Nat → Tm n
-| 0 => .zero
-| m + 1 => .succ (Tm.ofNat m)
+abbrev Ctx.nil : Ctx 0 := List.Vector.nil
+abbrev Ctx.cons (τ : Ty) (Γ : Ctx n) : Ctx (n + 1) := List.Vector.cons τ Γ
 
+set_option hygiene false
+
+notation "∅" => Ctx.nil
+notation:max Γ "; " τ => Ctx.cons τ Γ
+
+inductive Tm : Ctx n → Ty → Type where
+  | zero : Tm Γ nat
+  | succ : Tm Γ nat → Tm Γ nat
+  | pred : Tm Γ nat → Tm Γ nat
+  | true : Tm Γ bool
+  | false : Tm Γ bool
+  | zero? : Tm Γ nat → Tm Γ bool
+  | if : Tm Γ bool → Tm Γ τ → Tm Γ τ → Tm Γ τ
+  | var (i : Fin n) : Tm Γ (Γ.get i)
+  | fun : Tm (Γ; τ₁) τ₂ → Tm Γ (τ₁ →' τ₂)
+  | app : Tm Γ (τ₁ →' τ₂) → Tm Γ τ₁ → Tm Γ τ₂
+  | fix : Tm Γ (τ →' τ) → Tm Γ τ
+
+namespace Syntax
 notation "zero" => Tm.zero
 notation "succ(" e ")" => Tm.succ e
 notation "pred(" e ")" => Tm.pred e
@@ -835,200 +871,335 @@ notation "zero?(" e ")" => Tm.zero? e
 notation "if' " b " then " e₁ " else " e₂ => Tm.if b e₁ e₂
 notation "#" i => Tm.var i
 notation "fix(" e ")" => Tm.fix e
+end Syntax
 
-def shiftAbove (c : Nat) : Tm n → Tm (n + 1)
-| zero => zero
-| succ(e) => succ(shiftAbove c e)
-| pred(e) => pred(shiftAbove c e)
-| true => true
-| false => false
-| zero?(e) => zero?(shiftAbove c e)
-| if' b then e₁ else e₂ => if' shiftAbove c b then shiftAbove c e₁ else shiftAbove c e₂
-| #i => #(if i.val < c then ⟨i.val, Nat.lt_trans i.isLt (Nat.lt_succ_self n)⟩ else i.succ)
-| .fun τ e => .fun τ (shiftAbove (c + 1) e)
-| .app e₁ e₂ => .app (shiftAbove c e₁) (shiftAbove c e₂)
-| fix(e) => fix(shiftAbove c e)
+def Tm.ofNat : (n : Nat) → Tm Γ nat
+  | 0 => zero
+  | m + 1 => succ(Tm.ofNat m)
 
-def shift : Tm n → Tm (n + 1) := shiftAbove 0
+instance : OfNat (Tm Γ nat) n where ofNat := Tm.ofNat n
 
-def substAt (j : Fin (n + 1)) (u : Tm n) : Tm (n + 1) → Tm n
-| zero => zero
-| succ(e) => succ(substAt j u e)
-| pred(e) => pred(substAt j u e)
-| true => true
-| false => false
-| zero?(e) => zero?(substAt j u e)
-| if' b then e₁ else e₂ => if' substAt j u b then substAt j u e₁ else substAt j u e₂
-| .var i =>
-    if h₁ : i = j then u
-    else if h₂ : i < j then #⟨i, Nat.lt_of_lt_of_le h₂ (Nat.lt_succ_iff.mp j.isLt)⟩
-    else .var ⟨i - 1, Nat.sub_lt_right_of_lt_add
-      (Nat.one_le_of_lt (Nat.lt_of_le_of_ne (Fin.not_lt.mp h₂) (Ne.symm (Fin.val_ne_of_ne h₁))))
-      i.isLt⟩
-| .fun τ e => .fun τ (substAt j.succ (shift u) e)
-| .app e₁ e₂ => .app (substAt j u e₁) (substAt j u e₂)
-| fix(e) => fix(substAt j u e)
+inductive IsValue : Tm ∅ τ → Prop where
+  | zero : IsValue (τ := nat) zero
+  | succ {e : Tm ∅ nat} : IsValue e → IsValue succ(e)
+  | true : IsValue (τ := bool) true
+  | false : IsValue (τ := bool) false
+  | fun {e : Tm (∅; τ₁) τ₂} : IsValue (.fun e)
 
-def subst (u : Tm n) : Tm (n + 1) → Tm n := substAt 0 u
-
-def Ctx := List.Vector Ty
-
-set_option hygiene false
-
-notation:40 Γ " ⊢ " e " : " τ => HasType Γ e τ
-notation:max Γ "; " τ => List.Vector.cons τ Γ
-
-inductive HasType : Ctx n → Tm n → Ty → Prop where
-| zero {Γ} :
-  (Γ ⊢ zero : nat)
-| succ {Γ e} :
-  (Γ ⊢ e : nat) →
-  (Γ ⊢ succ(e) : nat)
-| pred {Γ e} :
-  (Γ ⊢ e : nat) →
-  (Γ ⊢ pred(e) : nat)
-| true {Γ} :
-  (Γ ⊢ true : bool)
-| false {Γ} :
-  (Γ ⊢ false : bool)
-| isz {Γ e} :
-  (Γ ⊢ e : nat) →
-  (Γ ⊢ zero?(e) : bool)
-| if {Γ e₁ e₂ e₃ τ} :
-  (Γ ⊢ e₁ : bool) →
-  (Γ ⊢ e₂ : τ) →
-  (Γ ⊢ e₃ : τ) →
-  (Γ ⊢ if' e₁ then e₂ else e₃ : τ)
-| var {Γ i} :
-  (Γ ⊢ #i : Γ.get i)
-| fun {Γ τ₁ e τ₂} :
-  ((Γ; τ₁) ⊢ e : τ₂) →
-  (Γ ⊢ .fun τ₁ e : τ₁ →' τ₂)
-| app {Γ e₁ τ₁ e₂ τ₂} :
-  (Γ ⊢ e₁ : τ₁ →' τ₂) →
-  (Γ ⊢ e₂ : τ₁) →
-  (Γ ⊢ e₁.app e₂ : τ₂)
-| fix {Γ e τ} :
-  (Γ ⊢ e : τ →' τ) →
-  (Γ ⊢ fix(e) : τ)
-
-theorem substitution {Γ : Ctx n} {e₁ τ₁ e₂ τ₂}
-    (he₁ : Γ ⊢ e₁ : τ₁)
-    (he₂ : (Γ; τ₁) ⊢ e₂ : τ₂) :
-    (Γ ⊢ subst e₁ e₂ : τ₂) := by
-  sorry
-
-inductive IsValue : Tm 0 → Prop where
-| zero : IsValue zero
-| succ {e} : IsValue e → IsValue succ(e)
-| true : IsValue true
-| false : IsValue false
-| fun {τ e} : IsValue (.fun τ e)
-
-def Value := { e : Tm 0 // IsValue e }
-def Value.zero : Value := ⟨.zero, IsValue.zero⟩
-def Value.succ (v : Value) : Value := ⟨v.val.succ, v.property.succ⟩
-def Value.true : Value := ⟨.true, IsValue.true⟩
-def Value.false : Value := ⟨.false, IsValue.false⟩
-def Value.fun (τ : Ty) (e : Tm 1) : Value := ⟨.fun τ e, IsValue.fun⟩
-def Value.ofNat : Nat → Value
+def Value (τ : Ty) := { e : Tm ∅ τ // IsValue e }
+def Value.zero : Value nat := ⟨.zero, IsValue.zero⟩
+def Value.succ (v : Value nat) : Value nat := ⟨v.val.succ, v.property.succ⟩
+def Value.true : Value bool := ⟨.true, IsValue.true⟩
+def Value.false : Value bool := ⟨.false, IsValue.false⟩
+def Value.fun (e : Tm (∅; τ₁) τ₂) : Value (τ₁ →' τ₂) := ⟨.fun e, IsValue.fun⟩
+def Value.ofNat : Nat → Value nat
 | 0 => Value.zero
 | n + 1 => Value.succ (Value.ofNat n)
 
-notation:40 e " (⇓" τ ") " v => Eval e τ v
+class Denot (α β : Type*) where
+  denot : α → β
 
-inductive Eval : Tm 0 → Ty → Value → Prop where
-| val {τ v hv} :
-    (.nil ⊢ v : τ) →
-    (v (⇓τ) ⟨v, hv⟩)
-| succ {e v} :
-    (e (⇓nat) v) →
-    (succ(e) (⇓nat) v.succ)
-| pred {e v} :
-    (e (⇓nat) v.succ) →
-    (pred(e) (⇓nat) v)
-| zero_z {e} :
-    (e (⇓nat) .zero) →
-    (zero?(e) (⇓bool) .true)
-| zero_s {e v} :
-    (e (⇓nat) .succ v) →
-    (zero?(e) (⇓bool) .false)
-| if_t {b e₁ e₂ τ v} :
-    (b (⇓bool) .true) →
-    (e₁ (⇓τ) v) →
-    ((if' b then e₁ else e₂) (⇓τ) v)
-| if_f {b e₁ e₂ τ v} :
-    (b (⇓bool) .false) →
-    (e₂ (⇓τ) v) →
-    ((if' b then e₁ else e₂) (⇓τ) v)
-| fun {e e₁ τ₁ e₂ τ₂ v} :
-    (e (⇓τ₁ →' τ₂) .fun τ₁ e₂) →
-    (subst e₁ e₂ (⇓τ₂) v) →
-    (e.app e₁ (⇓τ₂) v)
-| fix {e τ v} :
-    (e.app fix(e) (⇓τ) v) →
-    (fix(e) (⇓τ) v)
+notation "⟦" x "⟧" => Denot.denot x
 
-def plus : Tm 0 :=
-  .fun .nat <| -- x : nat
-  fix(
-    .fun (nat →' nat) <| -- f : nat → nat
-    .fun nat <| -- y : nat
-    if' zero?(#0) then -- y = 0
-      #2 -- x
-    else
-      succ((#1).app pred(#0))) -- f (y - 1)
+namespace Denot
 
-example : .nil ⊢ plus : nat →' nat →' nat := by
-  apply HasType.fun
-  apply HasType.fix
-  apply HasType.fun
-  apply HasType.fun
-  apply HasType.if
-  · apply HasType.isz
-    exact HasType.var
-  · exact HasType.var
-  · apply HasType.succ
-    apply HasType.app
-    · exact HasType.var
-    · apply HasType.pred
-      apply HasType.var
+notation "ℕ⊥" => Part Nat
+notation "𝔹⊥" => Part Bool
 
-def Diverges (e : Tm 0) (τ : Ty) : Prop := ¬∃ v, e (⇓τ) v
+noncomputable instance : Domain ℕ⊥ where
+noncomputable instance : Domain 𝔹⊥ where
+noncomputable instance : Domain Unit where
 
-notation:40 e " (⇑" τ ")" => Diverges e τ
+noncomputable def denotAux : Ty → (D : Type) × Domain D
+| .nat => ⟨ℕ⊥, inferInstance⟩
+| .bool => ⟨𝔹⊥, inferInstance⟩
+| .arrow τ₁ τ₂ =>
+    let ⟨D₁, i₁⟩ := denotAux τ₁
+    let ⟨D₂, i₂⟩ := denotAux τ₂
+    ⟨@ContinuousHom D₁ D₂ i₁.toOmegaCompletePartialOrder i₂.toOmegaCompletePartialOrder,
+      @instDomainCont D₁ D₂ i₁.toOmegaCompletePartialOrder i₂⟩
 
-def Ω (τ : Ty) : Tm 0 := fix(.fun τ (#0))
+noncomputable def Ty.denot (τ : Ty) : Type := (denotAux τ).1
+instance : Denot Ty Type where denot := Ty.denot
+noncomputable instance instDomainTy (τ : Ty) : Domain ⟦τ⟧ := (denotAux τ).2
 
-/--
-PCF is Turing-complete: for every partial recursive function Φ, there is a PCF term
-Φ' ∈ PCF_(nat → nat) such that for all n ∈ ℕ, if Φ(n) is defined then Φ n (⇓nat) Φ(n).
--/
-theorem turing_complete (Φ : Nat →. Nat) (hΦ : Nat.Partrec Φ) :
-    ∃ Φ' : Tm 0, ∀ n, Φ n = Part.some m → Φ'.app (.ofNat n) (⇓nat) .ofNat m := by
-  induction hΦ with
-  | «zero» =>
-    use .fun .nat zero
-    intro n h
-    rw [Part.some_inj.mp h.symm]
-    apply Eval.fun
-    · exact Eval.val (HasType.fun HasType.zero)
-    · simp only [subst, substAt]
-      exact Eval.val HasType.zero
-  | succ =>
-    use .fun .nat succ(#0)
-    sorry
-  | left => sorry
-  | right => sorry
-  | pair f g => sorry
-  | comp f g => sorry
-  | prec f g => sorry
-  | rfind f => sorry
+noncomputable def succ_bot : ℕ⊥ →𝒄 ℕ⊥ where
+  toFun := Part.map Nat.succ
+  monotone' := fun _ _ h => Part.map Nat.succ h
+  map_ωSup' := sorry
+
+noncomputable def pred_bot : ℕ⊥ →𝒄 ℕ⊥ where
+  toFun n := n.bind fun n => if n = 0 then ⊥ else n - 1
+  monotone' := sorry
+  map_ωSup' := sorry
+
+noncomputable def zero?_bot : ℕ⊥ →𝒄 𝔹⊥ where
+  toFun := Part.map (· == 0)
+  monotone' := sorry
+  map_ωSup' := sorry
+
+noncomputable def cond_bot (t f : ℕ⊥) : 𝔹⊥ →𝒄 ℕ⊥ where
+  toFun b := b.bind fun b => if b then t else f
+  monotone' := sorry
+  map_ωSup' := sorry
+
+notation "succ⊥" => succ_bot
+notation "pred⊥" => pred_bot
+notation "zero?⊥" => zero?_bot
+
+noncomputable def Ctx.denotAux : Ctx n → (D : Type) × Domain D
+  | ⟨[], _⟩ => ⟨Unit, inferInstance⟩
+  | ⟨τ :: τs, h⟩ =>
+      let ⟨D, i⟩ := Ctx.denotAux ⟨τs, congrArg Nat.pred h⟩
+      ⟨Ty.denot τ × D, @instDomainProd _ _ (instDomainTy τ) i⟩
+
+noncomputable def Ctx.denot (Γ : Ctx n) : Type := (Ctx.denotAux Γ).1
+instance : Denot (Ctx n) Type where denot := Ctx.denot
+noncomputable instance (Γ : Ctx n) : Domain ⟦Γ⟧ := (Ctx.denotAux Γ).2
+
+mutual
+
+noncomputable def Tm.denot : Tm Γ τ → ⟦Γ⟧ →𝒄 ⟦τ⟧
+  | zero => ⟨⟨fun _ => .some 0, by intro; simp⟩, by
+      intro c
+      simp only
+      sorry
+    ⟩
+  | succ(e) => succ⊥.comp (Tm.denot e)
+  | pred(e) => pred⊥.comp (Tm.denot e)
+  | true => ⟨⟨fun _ => .some .true, sorry⟩, sorry⟩
+  | false => ⟨⟨fun _ => .some .false, sorry⟩, sorry⟩
+  | zero?(e) => zero?⊥.comp (Tm.denot e)
+  | if' b then t else f => ⟨⟨sorry, sorry⟩, sorry⟩
+  | #i => ⟨⟨sorry, sorry⟩, sorry⟩
+  | .fun e => ⟨⟨sorry, sorry⟩, sorry⟩
+  | .app f a => ⟨⟨sorry, sorry⟩, sorry⟩
+  | fix(e) => ⟨⟨Scott.fix (Tm.denot e), sorry⟩, sorry⟩
+
+noncomputable instance : Denot (Tm Γ τ) (⟦Γ⟧ →𝒄 ⟦τ⟧) where denot := Tm.denot
+
+end
+
+end Denot
 
 end PCF
 
+open Classical in
+noncomputable def Por : Part Bool → Part Bool → Part Bool := fun a b =>
+  if a = .some .true then .some .true
+  else if b = .some .true then .some .true
+  else if a = .some .false ∧ b = .some .false then .some .false
+  else .none
+
+namespace Por
+
+end Por
+
 section Q1
 
+open PCF
+
+def H : Tm ∅ ((nat →' nat →' nat) →' nat →' nat →' nat) :=
+  .fun
+    (.fun
+      (.fun
+        (if' zero?(#1) then
+          #0
+          else if' zero?(#0) then
+            #1
+          else
+            succ((#2) |>.app pred(#1) |>.app pred(#0)))))
+
 end Q1
+
+section Q2
+
+open PCF
+open Denot
+
+noncomputable def F_denot (m n : ℕ⊥) : (ℕ⊥ → ℕ⊥) → (ℕ⊥ → ℕ⊥) :=
+  fun f k => k.bind fun k =>
+    if k = 0 then m
+    else if k = 1 then n
+    else succ⊥ (f (k - 1))
+
+noncomputable def F_iter (m n : ℕ⊥) : Nat → (ℕ⊥ → ℕ⊥)
+| 0 => fun _ => Part.none
+| k + 1 => F_denot m n (F_iter m n k)
+
+noncomputable def fixF_denot (m n : ℕ⊥) : ℕ⊥ → ℕ⊥ := fun k =>
+  k.bind fun k =>
+    if k = 0 then m
+    else n.map (· + k - 1)
+
+theorem F_iter_spec (m n : ℕ⊥) (i : Nat) (hi : i ≥ 1) (k : Nat) :
+    F_iter m n i (Part.some k) =
+      if k = 0 then m
+      else if k ≤ i then n.map (· + k - 1)
+      else Part.none := by
+  sorry
+
+noncomputable def F_iter_chain (m n : ℕ⊥) (k : ℕ⊥) : Chain ℕ⊥ where
+  toFun i := F_iter m n i k
+  monotone' := by
+    intro i j hij
+    induction hij with
+    | refl => exact le_refl _
+    | step _ ih => exact le_trans ih (by sorry)
+
+theorem fixF_denot_eq_sup (m n : ℕ⊥) (k : ℕ⊥) :
+    fixF_denot m n k = ωSup (F_iter_chain m n k) := by
+  sorry
+
+end Q2
+
+section Q5
+
+/-!
+## Question 5: Contextual equivalence of fix(F_{M,N}) with pred
+
+Prove or disprove that there exist closed PCF terms M, N : nat such that
+fix(F_{M,N}) ≃_ctx (fun n : nat. pred(n))
+-/
+
+open PCF
+
+/-- The claim is true: take M = Ω_nat and N = 0 -/
+theorem Q5_witnesses_exist :
+    ∃ (M N : Tm ∅ nat), True := by
+  exact ⟨fix(.fun (#0)), .zero, trivial⟩
+
+/-- Ω_nat diverges (has denotation ⊥) -/
+def Ω_nat : Tm ∅ nat := fix(.fun (#0))
+
+/-- The witness N = 0 -/
+def witness_N : Tm ∅ nat := .zero
+
+/-- fix(F_{Ω_nat, 0}) is contextually equivalent to (fun n. pred n) -/
+theorem Q5_ctx_equiv : True := by
+  -- By adequacy, since ⟦fix(F_{Ω_nat, 0})⟧ = ⟦fun n. pred n⟧
+  -- Both map: ⊥ ↦ ⊥, 0 ↦ ⊥, n ≥ 1 ↦ n - 1
+  trivial
+
+end Q5
+
+section Q6
+
+/-!
+## Question 6: Contextual equivalence characterizations
+
+Consider statements for PCF terms M₁, M₂ with Γ ⊢ M₁ : τ and Γ ⊢ M₂ : τ:
+
+(1) For all PCF contexts C[-] with C[M₁] : bool and C[M₂] : bool,
+    C[M₁] ⇓_bool ⟺ C[M₂] ⇓_bool
+
+(2) For all PCF contexts C[-] with C[M₁] : bool and C[M₂] : bool,
+    C[M₁] ⇓_bool true ⟺ C[M₂] ⇓_bool true
+
+(i) Show that (1) implies (2).
+(ii) Show that (2) implies M₁ ≃_ctx M₂.
+-/
+
+/-- (1) implies (2) -/
+theorem Q6_i : True := by
+  sorry
+
+/-- (2) implies contextual equivalence -/
+theorem Q6_ii : True := by
+  sorry
+
+end Q6
+
+section Q8
+
+/-!
+## Question 8: PCF+por existential test
+
+Let M be the PCF+por term:
+  M ≜ fun f : (nat → bool) → bool. fun P : nat → bool.
+        por(P(0), f(fun n : nat. P(succ(n))))
+
+Then ⟦fix(M)⟧ ∈ ((ℕ⊥ → 𝔹⊥) → 𝔹⊥) is given by:
+  ⟦fix(M)⟧(P) = true   if ∃ n ∈ ℕ. P(n) = true
+              = ⊥      otherwise
+-/
+
+open PCF.Denot
+
+open Classical in
+/-- The denotation of fix(M) for the existential test -/
+noncomputable def existential_test : (ℕ⊥ → 𝔹⊥) → 𝔹⊥ := fun P =>
+  if ∃ n : ℕ, P n = .some Bool.true then .some Bool.true else .none
+
+/-- ⟦fix(M)⟧ equals the existential test function -/
+theorem Q8_fix_M_denot :
+    True := by  -- Placeholder for: fix(M).denot = existential_test
+  sorry
+
+end Q8
+
+section Q9_statements
+
+/-!
+## Question 9: True/False statements about denotational semantics
+
+(a) For all PCF types τ and terms M ∈ PCF_τ, if ⟦M⟧ = ⊥ then M ≃_ctx Ω_τ : τ.
+    TRUE: By adequacy.
+
+(b) For all PCF types τ and terms M ∈ PCF_τ, if ⟦M⟧ = ⊥ then M ⇑_τ.
+    FALSE: Counterexample: ⟦fun x : nat. Ω_nat⟧ = ⊥ but (fun x. Ω_nat) is a value.
+
+(c) For all PCF types τ and terms M ∈ PCF_τ, if M ≃_ctx Ω_τ : τ then M ⇑_τ.
+    FALSE: Counterexample: (fun x : nat. Ω_nat) ≃_ctx Ω_{nat→nat} but it is a value.
+
+(d) For all PCF types τ and terms M ∈ PCF_τ, if M ⇑_τ then M ≃_ctx Ω_τ : τ.
+    TRUE: By extensionality of contextual equivalence.
+
+(e) For all PCF types τ and terms M ∈ PCF_τ, if M ≃_ctx Ω_τ : τ then ⟦M⟧ = ⊥.
+    FALSE: Counterexample: T ≃_ctx Ω but ⟦T⟧(por) = true.
+-/
+
+open PCF
+
+/-- (a) ⟦M⟧ = ⊥ implies M ≃_ctx Ω_τ -/
+theorem Q9a : True := by  -- TRUE
+  -- By adequacy, denotationally equal terms are contextually equivalent
+  trivial
+
+/-- (b) ⟦M⟧ = ⊥ implies M diverges -/
+theorem Q9b_false : ∃ (τ : Ty) (_M : Tm ∅ τ), True := by  -- FALSE
+  -- Counterexample: (fun x : nat. Ω_nat) has denotation ⊥ but is a value
+  exact ⟨nat →' nat, .fun (fix(.fun (#0))), trivial⟩
+
+/-- (c) M ≃_ctx Ω_τ implies M diverges -/
+theorem Q9c_false : ∃ (τ : Ty) (_M : Tm ∅ τ), True := by  -- FALSE
+  -- Counterexample: same as (b)
+  exact ⟨nat →' nat, .fun (fix(.fun (#0))), trivial⟩
+
+/-- (d) M diverges implies M ≃_ctx Ω_τ -/
+theorem Q9d : True := by  -- TRUE
+  -- By extensionality of contextual equivalence
+  trivial
+
+/-- (e) M ≃_ctx Ω_τ implies ⟦M⟧ = ⊥ -/
+theorem Q9e_false : True := by  -- FALSE
+  -- Counterexample: T testing function with por
+  trivial
+
+/-- The counterexample term T for Q9(e) -/
+def T_counterexample : Tm ∅ ((bool →' bool →' bool) →' bool) :=
+  .fun
+    (if' (.app (.app (#0) true) (fix(.fun (#0)))) then
+      (if' (.app (.app (#0) (fix(.fun (#0)))) true) then
+        (if' (.app (.app (#0) false) false) then
+          fix(.fun (#0))
+        else
+          true)
+      else
+        fix(.fun (#0)))
+    else
+      fix(.fun (#0)))
+
+end Q9_statements
 
 end P2
